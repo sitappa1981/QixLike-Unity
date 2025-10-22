@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 3
+  tags: []
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: Background
+    uniqueID: 1332232367
+    locked: 0
+  - name: Overlay
+    uniqueID: 715982225
+    locked: 0
+  - name: Walls
+    uniqueID: 2018914077
+    locked: 0
+  - name: Trail
+    uniqueID: 1242693341
+    locked: 0
+  - name: UI
+    uniqueID: 267873965
+    locked: 0
+  m_RenderingLayers:
+  - Default
