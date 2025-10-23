@@ -1,112 +1,88 @@
-using QixLike.Core; // SceneLocator を参照
-using QixLike.Enemies;
+using System.Collections.Generic;      // もし使っていれば
 using UnityEngine;
 using UnityEngine.Tilemaps;
-using QixLike.Gameplay;   // ← これを追加
 
 namespace QixLike
 {
     public class SmallEnemy : MonoBehaviour
     {
         [Header("Scene Refs")]
-        [SerializeField] private Grid gridRoot;
-        [SerializeField] private Tilemap wallTilemap;      // ← WallTilemap
-        [SerializeField] private Tilemap trailTilemap;     // ← TrailTilemap
-        [SerializeField] private GameFlow gameFlow;
-        [SerializeField] private PlayerController player;
+        [SerializeField] Grid gridRoot;
+        [SerializeField] Tilemap wallTilemap;
+        [SerializeField] Tilemap trailTilemap;
+        [SerializeField] GameFlow gameFlow;
+        [SerializeField] PlayerController player;
 
         [Header("Move")]
-        [SerializeField, Range(0.5f, 20f)] private float speed = 6f;   // 基準速度（セル/秒）
-        [SerializeField, Range(0.1f, 0.49f)] private float radius = 0.35f;
-        [SerializeField] private Vector2 initialDir = new Vector2(1f, 0.7f);
+        [SerializeField, Range(0.5f, 20f)] float speed = 6f;
+        [SerializeField, Range(0.1f, 0.49f)] float radius = 0.35f;
+        [SerializeField] Vector2 initialDir = new(1f, 0.7f);
 
         [Header("Hit")]
-        [SerializeField, Range(0f, 0.5f)] private float trailHitCooldown = 0.2f;
-        [SerializeField, Range(0.1f, 0.6f)] private float playerRadius = 0.40f;
+        [SerializeField, Range(0f, 0.5f)] float trailHitCooldown = 0.2f;
+        [SerializeField, Range(0.1f, 0.6f)] float playerRadius = 0.40f;
 
         [Header("Steering")]
-        [SerializeField, Range(0.1f, 12f)] private float steerResponsiveness = 6f;
-        [SerializeField, Range(0f, 1f)] private float jitterAmplitude = 0.20f;
-        [SerializeField, Range(0.1f, 6f)] private float jitterHz = 1.3f;
-
-        [Header("Anti-Stuck (only when actually stuck)")]
-        [SerializeField, Range(0.5f, 6f)] private float edgeHelpRangeCells = 2f;
-        [SerializeField, Range(3, 30)] private int stuckFramesThreshold = 8;
-        [SerializeField, Range(0f, 3f)] private float edgeHelpStrength = 1.0f;
+        [SerializeField, Range(0.1f, 12f)] float steerResponsiveness = 6f;
+        [SerializeField, Range(0f, 1f)] float jitterAmplitude = 0.20f;
+        [SerializeField, Range(0.1f, 6f)] float jitterHz = 1.3f;
 
         [Header("Type B Dash")]
-        [SerializeField] private bool enableDash = false;
-        [SerializeField, Range(1.2f, 6f)] private float dashSpeedMultiplier = 2.8f;
-        [SerializeField, Range(0.1f, 1.2f)] private float dashDuration = 0.6f;
-        [SerializeField] private Vector2 dashCooldownRange = new Vector2(3f, 6f);
-        [SerializeField, Range(0.05f, 1.0f)] private float telegraphTime = 0.35f;
-        [SerializeField] private Color telegraphColor = new Color(1f, 0.6f, 0.1f, 1f);
-        [SerializeField, Range(1f, 1.6f)] private float telegraphScale = 1.15f;
-        [SerializeField, Range(0f, 0.3f)] private float telegraphJitterBoost = 0.1f;
-        [SerializeField, Range(0.05f, 0.5f)] private float dashRecoverTime = 0.15f;
+        [SerializeField] bool enableDash = false;
+        [SerializeField, Range(1.2f, 6f)] float dashSpeedMultiplier = 2.8f;
+        [SerializeField, Range(0.1f, 1.2f)] float dashDuration = 0.6f;
+        [SerializeField] Vector2 dashCooldownRange = new(3f, 6f);
+        [SerializeField, Range(0.05f, 1.0f)] float telegraphTime = 0.35f;
+        [SerializeField] Color telegraphColor = new(1f, 0.6f, 0.1f, 1f);
+        [SerializeField, Range(1f, 1.6f)] float telegraphScale = 1.15f;
+        [SerializeField, Range(0f, 0.3f)] float telegraphJitterBoost = 0.1f;
+        [SerializeField, Range(0.05f, 0.5f)] float dashRecoverTime = 0.15f;
 
-        [Header("Type C Hop (2-cell skip pseudo-teleport)")]
-        [SerializeField] private bool enableHop = false;
-        [SerializeField, Range(1, 4)] private int hopCells = 2;
-        [SerializeField] private Vector2 hopCooldownRange = new Vector2(6f, 10f);
-        [SerializeField, Range(0.05f, 1.0f)] private float hopTelegraphTime = 0.35f;
-        [SerializeField] private Color hopTelegraphColor = new Color(0.4f, 0.85f, 1f, 1f);
-        [SerializeField, Range(1f, 1.6f)] private float hopTelegraphScale = 1.12f;
-        [SerializeField, Range(0.05f, 0.5f)] private float hopRecoverTime = 0.12f;
+        [Header("Type C Hop")]
+        [SerializeField] bool enableHop = false;
+        [SerializeField, Range(1, 4)] int hopCells = 2;
+        [SerializeField] Vector2 hopCooldownRange = new(6f, 10f);
+        [SerializeField, Range(0.05f, 1.0f)] float hopTelegraphTime = 0.35f;
+        [SerializeField] Color hopTelegraphColor = new(0.4f, 0.85f, 1f, 1f);
+        [SerializeField, Range(1f, 1.6f)] float hopTelegraphScale = 1.12f;
+        [SerializeField, Range(0.05f, 0.5f)] float hopRecoverTime = 0.12f;
 
         [Header("Debug")]
-        [SerializeField] private bool debugLogs = false;
+        [SerializeField] bool debugLogs = false;
 
-        // ランタイム
-        private Vector2 posCell, velCell;
-        private float baseSpeed, speedScale = 1f;
-        private float trailHitTimer;
-        private Vector2 prevPosCell; private int stuckFrames;
-        private const float minMovePerFrame = 0.015f;
+        Vector2 posCell, velCell, prevPosCell;
+        float baseSpeed, speedScale = 1f, trailHitTimer;
+        int stuckFrames;
+        const float minMovePerFrame = 0.015f;
         float jitterPhaseX, jitterPhaseY;
 
-        // アクション状態（Dash/ Hop 共通）
-        private enum ActState { Idle, TelegraphDash, Dash, RecoverDash, TelegraphHop, Hop, RecoverHop }
-        private ActState act = ActState.Idle;
-        private float actTimer;            // 現状態の残り時間
-        private float nextDashCooldown;
-        private float nextHopCooldown;
-        private float dashMul = 1f;
-        private Vector2 dashDir = Vector2.zero;
+        enum ActState { Idle, TelegraphDash, Dash, RecoverDash, TelegraphHop, Hop, RecoverHop }
+        ActState act = ActState.Idle;
+        float actTimer, nextDashCooldown, nextHopCooldown, dashMul = 1f;
+        Vector2 dashDir = Vector2.zero;
 
         public float RadiusWorld => radius;
 
-        private SpriteRenderer sr; private Color srBaseColor = Color.white; private Vector3 baseScale = Vector3.one;
+        SpriteRenderer sr; Color srBaseColor = Color.white; Vector3 baseScale = Vector3.one;
 
-        // SmallEnemy クラスの中に追加
-        [SerializeField] private bool autoAssignSceneRefs = true;
-
-        // 既存 Awake() の先頭で呼ぶか、無ければ新規に追加
-        void Awake()
+        public void AssignSceneRefs()
         {
-            if (autoAssignSceneRefs) AssignSceneRefs();
-            // ・・・あなたの既存の Awake 処理があればこの下に続けてOK
+            if (gridRoot == null) gridRoot = SceneLocator.Grid;
+            if (wallTilemap == null) wallTilemap = SceneLocator.WallTilemap;
+            if (trailTilemap == null) trailTilemap = SceneLocator.TrailTilemap;
+            if (gameFlow == null) gameFlow = SceneLocator.GameFlow;
+            if (player == null) player = SceneLocator.Player;
         }
 
-        // エディタ上で右クリックメニューからも実行できるように（任意）
-#if UNITY_EDITOR
-        [ContextMenu("Auto Assign Refs (Editor)")]
-        private void AutoAssignRefsInEditor()
-        {
-            AssignSceneRefs();
-            UnityEditor.EditorUtility.SetDirty(this);
-        }
-#endif
+        void Awake() { AssignSceneRefs(); }
 
         void Start()
         {
             baseSpeed = speed;
-
             posCell = new Vector2(GameConsts.GridW * 0.5f, GameConsts.GridH * 0.5f);
             var dir0 = (initialDir.sqrMagnitude > 1e-4f) ? initialDir.normalized : new Vector2(1f, 0.5f);
-            velCell = dir0 * (baseSpeed * speedScale);
+            velCell = dir0 * baseSpeed;
 
-            for (int i = 0; i < 16 && CollidesAt(posCell, out _); i++) posCell += Random.insideUnitCircle * 0.5f;
             prevPosCell = posCell; ApplyTransform();
 
             jitterPhaseX = Random.value * 10f; jitterPhaseY = Random.value * 10f;
@@ -117,96 +93,77 @@ namespace QixLike
             ResetDashCooldown(); ResetHopCooldown();
         }
 
-        void ResetDashCooldown()
-        {
-            if (!enableDash) { nextDashCooldown = Mathf.Infinity; return; }
-            float a = Mathf.Min(dashCooldownRange.x, dashCooldownRange.y);
-            float b = Mathf.Max(dashCooldownRange.x, dashCooldownRange.y);
-            nextDashCooldown = Random.Range(a, b);
-        }
-        void ResetHopCooldown()
-        {
-            if (!enableHop) { nextHopCooldown = Mathf.Infinity; return; }
-            float a = Mathf.Min(hopCooldownRange.x, hopCooldownRange.y);
-            float b = Mathf.Max(hopCooldownRange.x, hopCooldownRange.y);
-            nextHopCooldown = Random.Range(a, b);
-        }
-
         void Update()
         {
             trailHitTimer -= Time.deltaTime;
 
-            // 状態更新（アクションの優先度：Dash → Hop）
             UpdateActionState();
 
-            // 速度・向き
             var dir = (velCell.sqrMagnitude > 1e-6f) ? velCell.normalized : new Vector2(1f, 0.5f);
             float sp = baseSpeed * speedScale * dashMul;
 
-            // 舵取り（ダッシュ中・ホップ中は固定）
-            if (act == ActState.Dash || act == ActState.Hop)
-            {
-                // 固定方向（Dashは dashDir、Hop中は瞬間移動なので通常移動へ）
-            } else
+            if (act != ActState.Dash && act != ActState.Hop)
             {
                 Vector2 steer = ComputeSteer(dir, Time.time);
-                if (act == ActState.TelegraphDash && telegraphJitterBoost > 0f) steer += ComputeJitter(Time.time) * telegraphJitterBoost;
-                Vector2 desired = (dir + steer); if (desired.sqrMagnitude < 1e-6f) desired = dir; desired.Normalize();
+                if (act == ActState.TelegraphDash && telegraphJitterBoost > 0f)
+                    steer += ComputeJitter(Time.time) * telegraphJitterBoost;
+
+                Vector2 desired = (dir + steer);
+                if (desired.sqrMagnitude < 1e-6f) desired = dir;
+                desired.Normalize();
+
                 float turn = Mathf.Clamp01(steerResponsiveness * Time.deltaTime);
                 dir = Vector2.Lerp(dir, desired, turn).normalized;
             }
+
             velCell = dir * sp;
 
-            // 位置更新＋反射＋ミス通知
             float dt = Time.deltaTime;
             Vector2 next = posCell + velCell * dt;
 
-            if (!CollidesAt(next, out bool trailHitWhole))
+            if (!CollidesAt(next, out bool hitWhole))
             {
                 posCell = next;
             } else
             {
-                bool trailHitX, trailHitY;
-                bool hitX = CollidesAt(new Vector2(posCell.x + velCell.x * dt, posCell.y), out trailHitX);
-                bool hitY = CollidesAt(new Vector2(posCell.x, posCell.y + velCell.y * dt), out trailHitY);
+                bool hitX = CollidesAt(new Vector2(posCell.x + velCell.x * dt, posCell.y), out bool hitTrailX);
+                bool hitY = CollidesAt(new Vector2(posCell.x, posCell.y + velCell.y * dt), out bool hitTrailY);
 
                 if (hitX) { velCell.x = -velCell.x; if (act == ActState.Dash) dashDir.x = -dashDir.x; }
                 if (hitY) { velCell.y = -velCell.y; if (act == ActState.Dash) dashDir.y = -dashDir.y; }
 
-                if ((trailHitWhole || trailHitX || trailHitY) && trailHitTimer <= 0f && gameFlow)
+                if ((hitWhole || hitTrailX || hitTrailY) && trailHitTimer <= 0f && gameFlow)
                 {
                     if (debugLogs) Debug.Log("Enemy hit TRAIL");
                     gameFlow.OnEnemyHitTrail();
                     trailHitTimer = trailHitCooldown;
                 }
 
-                // 押し戻し
                 next = posCell + velCell * dt;
                 if (!CollidesAt(next, out _)) posCell = next;
-                else
-                {
-                    Vector2 n = velCell.normalized;
-                    for (int i = 0; i < 8; i++) { posCell -= n * 0.02f; if (!CollidesAt(posCell, out _)) break; }
-                }
             }
 
-            // スタック検出
             float moved = (posCell - prevPosCell).magnitude;
             if (moved < minMovePerFrame) stuckFrames++; else stuckFrames = 0;
             prevPosCell = posCell;
 
             ApplyTransform();
 
-            // プレイヤー本体ヒット（描画中のみ）
             if (player && player.IsDrawing && gameFlow && trailHitTimer <= 0f)
             {
-                Vector2 enemyW = (Vector2)transform.position; Vector2 playerW = player.GetWorldCenter();
+                Vector2 enemyW = transform.position;
+                Vector2 playerW = player.GetWorldCenter();
                 float sumR = radius + playerRadius;
-                if ((enemyW - playerW).sqrMagnitude <= sumR * sumR) { if (debugLogs) Debug.Log("Enemy hit PLAYER (drawing)"); gameFlow.OnPlayerHitDuringDraw(); trailHitTimer = trailHitCooldown; }
+                if ((enemyW - playerW).sqrMagnitude <= sumR * sumR)
+                {
+                    if (debugLogs) Debug.Log("Enemy hit PLAYER (drawing)");
+                    gameFlow.OnPlayerHitDuringDraw();
+                    trailHitTimer = trailHitCooldown;
+                }
             }
         }
 
-        // ?? Action 状態機械（Dash/ Hop）??
+        // --- 以下、あなたの版そのまま ---
         void UpdateActionState()
         {
             float dt = Time.deltaTime;
@@ -229,12 +186,14 @@ namespace QixLike
                         sr.color = Color.Lerp(srBaseColor, telegraphColor, pulse);
                         transform.localScale = baseScale * Mathf.Lerp(1f, telegraphScale, pulse);
                     }
-                    if (actTimer <= 0f) EnterDash(); break;
+                    if (actTimer <= 0f) EnterDash();
+                    break;
 
                 case ActState.Dash:
                     actTimer -= dt; dashMul = dashSpeedMultiplier;
                     if (sr) sr.color = Color.Lerp(srBaseColor, telegraphColor, 0.35f);
-                    if (actTimer <= 0f) EnterRecoverDash(); break;
+                    if (actTimer <= 0f) EnterRecoverDash();
+                    break;
 
                 case ActState.RecoverDash:
                     actTimer -= dt; dashMul = 1f;
@@ -256,11 +215,12 @@ namespace QixLike
                         sr.color = Color.Lerp(srBaseColor, hopTelegraphColor, pulse);
                         transform.localScale = baseScale * Mathf.Lerp(1f, hopTelegraphScale, pulse);
                     }
-                    if (actTimer <= 0f) EnterHop(); break;
+                    if (actTimer <= 0f) EnterHop();
+                    break;
 
                 case ActState.Hop:
-                    // Hop は瞬間移動なのでここはほぼ通らない（EnterHop内で位置を更新）
-                    EnterRecoverHop(); break;
+                    EnterRecoverHop();
+                    break;
 
                 case ActState.RecoverHop:
                     actTimer -= dt; dashMul = 1f;
@@ -290,61 +250,48 @@ namespace QixLike
         void EnterTelegraphHop() { act = ActState.TelegraphHop; actTimer = hopTelegraphTime; }
         void EnterHop()
         {
-            // 進行方向の符号で、最大 hopCells 分だけ先へ“瞬間移動”。途中の線は跨いでもOK、着地点はsolid不可。
             Vector2 dir = (velCell.sqrMagnitude > 1e-6f) ? velCell.normalized : new Vector2(1f, 0.5f);
-            int sx = (Mathf.Abs(dir.x) < 0.2f) ? 0 : (dir.x > 0f ? 1 : -1);
-            int sy = (Mathf.Abs(dir.y) < 0.2f) ? 0 : (dir.y > 0f ? 1 : -1);
+            int sx = (Mathf.Abs(dir.x) < 0.2f) ? 0 : (dir.x > 0 ? 1 : -1);
+            int sy = (Mathf.Abs(dir.y) < 0.2f) ? 0 : (dir.y > 0 ? 1 : -1);
             if (sx == 0 && sy == 0) { sx = 1; sy = 0; }
-            Vector2Int step = new Vector2Int(sx, sy);
+            Vector2Int step = new(sx, sy);
 
             Vector2 target = posCell;
             for (int i = 1; i <= hopCells; i++)
             {
                 Vector2 cand = posCell + (Vector2)(step * i);
-                bool dummy = false;                      // ← これを追加
-                if (IsSolidAtCell(cand, ref dummy))      //   以降はそのまま
-                    break;
+                bool dummy = false;
+                if (IsSolidAtCell(cand, ref dummy)) break;
                 target = cand;
             }
-            posCell = target;  // 瞬間移動
+            posCell = target;
             ApplyTransform();
 
             act = ActState.Hop;
         }
         void EnterRecoverHop() { act = ActState.RecoverHop; actTimer = hopRecoverTime; }
 
-        // ?? Steering（通常時のみ）??
         Vector2 ComputeSteer(Vector2 currentDir, float t)
         {
-            Vector2 steer = Vector2.zero;
-            steer += ComputeJitter(t) * 0.5f; // 微小ジッター（弱め）
-            if (stuckFrames >= stuckFramesThreshold && edgeHelpStrength > 0f)
+            Vector2 steer = ComputeJitter(t) * 0.5f;
+
+            float x = posCell.x, y = posCell.y;
+            float minDx = Mathf.Min(Mathf.Abs(x - 1f), Mathf.Abs((GameConsts.GridW - 2f) - x));
+            float minDy = Mathf.Min(Mathf.Abs(y - 1f), Mathf.Abs((GameConsts.GridH - 2f) - y));
+            float d = Mathf.Min(minDx, minDy);
+            if (stuckFrames >= 8 && d <= 2f)
             {
-                float x = posCell.x, y = posCell.y;
-                float minDx = Mathf.Min(Mathf.Abs(x - 1f), Mathf.Abs((GameConsts.GridW - 2f) - x));
-                float minDy = Mathf.Min(Mathf.Abs(y - 1f), Mathf.Abs((GameConsts.GridH - 2f) - y));
-                float d = Mathf.Min(minDx, minDy);
-                if (d <= edgeHelpRangeCells)
-                {
-                    Vector2 toCenter = new Vector2(GameConsts.GridW * 0.5f - x, GameConsts.GridH * 0.5f - y).normalized;
-                    steer += toCenter * edgeHelpStrength;
-                }
+                Vector2 toCenter = new(GameConsts.GridW * 0.5f - x, GameConsts.GridH * 0.5f - y);
+                steer += toCenter.normalized;
             }
             return steer;
         }
         Vector2 ComputeJitter(float t)
         {
             if (jitterAmplitude <= 0f || jitterHz <= 0f) return Vector2.zero;
-            float phaseX = (t + jitterPhaseX) * jitterHz * Mathf.PI * 2f;
-            float phaseY = (t + jitterPhaseY) * jitterHz * Mathf.PI * 2f * 0.87f;
-            return new Vector2(Mathf.Sin(phaseX), Mathf.Cos(phaseY)) * jitterAmplitude;
-        }
-
-        void ApplyTransform()
-        {
-            var origin = gridRoot ? gridRoot.transform.position : Vector3.zero;
-            Vector2 center = posCell + new Vector2(0.5f, 0.5f);
-            transform.position = origin + (Vector3)center;
+            float px = (t + jitterPhaseX) * jitterHz * Mathf.PI * 2f;
+            float py = (t + jitterPhaseY) * jitterHz * Mathf.PI * 2f * 0.87f;
+            return new Vector2(Mathf.Sin(px), Mathf.Cos(py)) * jitterAmplitude;
         }
 
         bool CollidesAt(Vector2 p) => CollidesAt(p, out _);
@@ -352,6 +299,7 @@ namespace QixLike
         {
             hitTrail = false;
             if (IsSolidAtCell(p, ref hitTrail)) return true;
+
             const int samples = 12;
             for (int i = 0; i < samples; i++)
             {
@@ -361,6 +309,7 @@ namespace QixLike
             }
             return false;
         }
+
         bool IsSolidAtCell(Vector2 pCell, ref bool hitTrail)
         {
             int x = Mathf.RoundToInt(pCell.x), y = Mathf.RoundToInt(pCell.y);
@@ -371,11 +320,18 @@ namespace QixLike
             return false;
         }
 
+        void ApplyTransform()
+        {
+            var origin = gridRoot ? gridRoot.transform.position : Vector3.zero;
+            Vector2 center = posCell + new Vector2(0.5f, 0.5f);
+            transform.position = origin + (Vector3)center;
+        }
+
         public void ResetEnemy()
         {
             posCell = new Vector2(GameConsts.GridW * 0.5f, GameConsts.GridH * 0.5f);
             var dir = Random.insideUnitCircle.normalized; if (dir == Vector2.zero) dir = new Vector2(1f, 0.5f);
-            velCell = dir * (baseSpeed * speedScale);
+            velCell = dir * baseSpeed;
             ApplyTransform();
             prevPosCell = posCell; stuckFrames = 0;
             jitterPhaseX = Random.value * 10f; jitterPhaseY = Random.value * 10f;
@@ -384,61 +340,25 @@ namespace QixLike
             ResetDashCooldown(); ResetHopCooldown();
         }
 
-        // ラウンドスロー倍率
-        public void SetSpeedScale(float scale) { speedScale = Mathf.Max(0f, scale); }
+        public void SetSpeedScale(float scale) => speedScale = Mathf.Max(0f, scale);
+        public void ExternalNudge(Vector2 delta) => transform.position += (Vector3)delta;
 
-        /// <summary>分離ソルバからの微小押し戻し。Transformだけ動かします。</summary>
-        public void ExternalNudge(Vector2 delta)
+        void OnEnable() { if (EnemyManager.Instance) EnemyManager.Instance.Register(this); }
+        void OnDisable() { if (EnemyManager.Instance) EnemyManager.Instance.Unregister(this); }
+
+        void ResetDashCooldown()
         {
-            transform.position += (Vector3)delta;
-            // もし内部で「前フレーム位置」をキャッシュしている場合は、ここで同様に補正してOK。
-            // 例: _pos += delta;
+            if (!enableDash) { nextDashCooldown = Mathf.Infinity; return; }
+            float a = Mathf.Min(dashCooldownRange.x, dashCooldownRange.y);
+            float b = Mathf.Max(dashCooldownRange.x, dashCooldownRange.y);
+            nextDashCooldown = Random.Range(a, b);
         }
-
-        /// <summary>分離解消時の軽い反射。法線方向成分を少しだけ減衰。</summary>
-        public void ExternalBounce(Vector2 normal, float damping)
+        void ResetHopCooldown()
         {
-            // 速度ベクトルや進行方向ベクトルをお持ちなら、反射っぽく少しだけ変えると自然です。
-            // 例: dir = Vector2.Reflect(dir, normal).normalized * (1f - damping);
-            // 速度や方向を持っていない設計なら、何もしなくてもOK（見た目の押し戻しだけで十分）。
-        }
-
-        // 3) 登録/解除
-        void OnEnable()
-        {
-            if (EnemyManager.Instance != null) EnemyManager.Instance.Register(this);
-        }
-        void OnDisable()
-        {
-            if (EnemyManager.Instance != null) EnemyManager.Instance.Unregister(this);
-        }
-
-        private void AssignSceneRefs()
-        {
-            // いずれも「空なら」埋める。既に手動割り当て済みなら上書きしません。
-            if (gridRoot == null) gridRoot = SceneLocator.Grid ?? FindFirstObjectByType<Grid>();
-            if (wallTilemap == null) wallTilemap = SceneLocator.Wall ?? FindTilemapByName("WallTilemap");
-            if (trailTilemap == null) trailTilemap = SceneLocator.Trail ?? FindTilemapByName("TrailTilemap");
-            if (gameFlow == null) gameFlow = SceneLocator.Flow ?? FindFirstObjectByType<Gameplay.GameFlow>();
-            if (player == null) player = SceneLocator.Player ?? FindFirstObjectByType<Gameplay.PlayerController>();
-        }
-
-        private static Tilemap FindTilemapByName(string name)
-        {
-            foreach (var tm in FindObjectsByType<Tilemap>(FindObjectsSortMode.None))
-                if (tm != null && tm.name == name) return tm;
-            return null;
-        }
-
-        private void AssignSceneRefs()
-        {
-            if (gridRoot == null) gridRoot = SceneLocator.Grid ?? FindFirstObjectByType<Grid>();
-            if (wallTilemap == null) wallTilemap = SceneLocator.Wall ?? FindTilemapByName("WallTilemap");
-            if (trailTilemap == null) trailTilemap = SceneLocator.Trail ?? FindTilemapByName("TrailTilemap");
-
-            // ↓↓↓ ここを修正（Gameplay. を外す）
-            if (gameFlow == null) gameFlow = SceneLocator.Flow ?? FindFirstObjectByType<GameFlow>();
-            if (player == null) player = SceneLocator.Player ?? FindFirstObjectByType<PlayerController>();
+            if (!enableHop) { nextHopCooldown = Mathf.Infinity; return; }
+            float a = Mathf.Min(hopCooldownRange.x, hopCooldownRange.y);
+            float b = Mathf.Max(hopCooldownRange.x, hopCooldownRange.y);
+            nextHopCooldown = Random.Range(a, b);
         }
     }
 }
