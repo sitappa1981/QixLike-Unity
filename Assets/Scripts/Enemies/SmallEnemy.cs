@@ -1,145 +1,242 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(CircleCollider2D))]
 [DisallowMultipleComponent]
 public class SmallEnemy : MonoBehaviour
 {
+    public enum Variant { TypeA, TypeB_Dash, TypeC_Hop, TypeD_DashHop }
+
+    [Header("Variant")]
+    [SerializeField] Variant variant = Variant.TypeA;
+
     [Header("Speed")]
-    [SerializeField] float baseSpeed = 2.2f;        // 基本速度
-    [SerializeField] float speedScale = 1.0f;       // 難易度や個体差
-    [SerializeField] float dashMul = 1.0f;        // ダッシュ時の倍率（通常=1）
+    [SerializeField] float baseSpeed = 3.6f;
+    [SerializeField] float speedScale = 1.0f;     // GameFlow から SetSpeedScale
+    [SerializeField] float dashMul = 1.0f;      // Dash/Hop で更新
 
-    [Header("Steering (方向付け)")]
-    [SerializeField, Range(0f, 1f)] float separationSteer = 0.6f; // 分離ベクトルの混ぜ具合
-    [SerializeField] float noiseClamp = 0.02f;                    // 微小ノイズ（反射角の揺らぎ）
-    [SerializeField] LayerMask wallMask;                          // 外周や壁のレイヤ
-    [SerializeField] float reflectProbe = 0.2f;                   // 反射レイの射程
+    [Header("Steering (Separation/Noise)")]
+    [SerializeField, Range(0f, 1f)] float separationSteer = 0.06f;
+    [SerializeField] float steerMax = 0.5f;
+    [SerializeField] float noiseClamp = 0.03f;
+    [SerializeField, Range(0f, 0.2f)] float speedJitterRange = 0.06f;
 
-    // グリッド移動（= 物理ではなく transform を直接動かす）
-    Vector2 posCell;   // 位置（セル/ワールドどちらでも運用OK）
-    Vector2 velCell;   // 速度ベクトル（方向×速度）
+    [Header("Boundary / Reflect")]
+    [SerializeField] LayerMask wallMask;          // Boundary を割当
+    [SerializeField] float skin = 0.02f;          // 壁との最小すき間
+
+    [Header("Dash (TypeB/TypeD)")]
+    [SerializeField] Vector2 dashIntervalRange = new Vector2(1.0f, 2.0f);
+    [SerializeField] float dashDuration = 0.25f;
+    [SerializeField] float dashMultiplier = 2.4f;
+
+    [Header("Hop (TypeC/TypeD)")]
+    [SerializeField] Vector2 hopRunRange = new Vector2(0.7f, 1.2f);
+    [SerializeField] float hopPauseTime = 0.40f;
+    [SerializeField] float hopBurstTime = 0.18f;
+    [SerializeField] float hopMultiplier = 2.6f;
+
+    // ---- 内部状態 ----
+    Vector2 desiredVel;           // 行きたい速度
+    Vector2 currentVel;           // 実際の速度（分離へ渡す）
+    Vector2 dirFallback = Vector2.right;
+
+    int noiseSeed;
+    float speedJitter = 1f;
+
+    float dashEndT, dashNextT;
+
+    // ★ HopState はここだけ！
+    enum HopState { Run, Pause, Burst }
+    HopState hopState = HopState.Run;
+    float hopStateEndT;
+    float hopMul = 1f;
 
     Rigidbody2D rb;
+    CircleCollider2D cc;
     EnemySeparation2D sep;
+    ContactFilter2D boundaryFilter;
+    readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        cc = GetComponent<CircleCollider2D>();
         sep = GetComponent<EnemySeparation2D>();
 
-        // 物理は移動に使わないが、安全側設定
+        rb.bodyType = RigidbodyType2D.Dynamic;
         rb.gravityScale = 0f;
-        rb.interpolation = RigidbodyInterpolation2D.Interpolate;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+        rb.interpolation = RigidbodyInterpolation2D.Interpolate;
+        rb.freezeRotation = true;
 
-        posCell = transform.position;
-        velCell = Vector2.right * baseSpeed; // 初期化（任意）
+        boundaryFilter = new ContactFilter2D { useLayerMask = true, useTriggers = true };
+        boundaryFilter.SetLayerMask(wallMask);
+
+        noiseSeed = Mathf.Abs(GetInstanceID());
+        speedJitter = 1f + (Hash01(noiseSeed) * 2f - 1f) * speedJitterRange;
+
+        InitDash();
+        InitHop();
+
+        currentVel = Vector2.right * baseSpeed;
+        desiredVel = currentVel;
     }
 
+    void OnEnable() { var em = QixLike.EnemyManager.Instance; if (em) em.Register(this); }
+    void OnDisable() { var em = QixLike.EnemyManager.Instance; if (em) em.Unregister(this); }
+
+    // ---- ステア・ダッシュなどで「行きたい速度」を作る ----
     void Update()
     {
-        float dt = Time.deltaTime;
+        float t = Time.time;
 
-        // ---- 1) 現在の前方（速度があれば正規化、無ければ右向き） ----
-        Vector2 forward = (velCell.sqrMagnitude > 1e-6f) ? velCell.normalized : Vector2.right;
+        UpdateDash();
+        UpdateHop();
 
-        // ---- 2) 壁ヒットで反射 ----
-        forward = ReflectIfHit(forward);
+        Vector2 forward = currentVel.sqrMagnitude > 1e-6f ? currentVel.normalized : dirFallback;
 
-        // ---- 3) ステア（分離 + 微小ノイズ）を加えて最終方向へ ----
-        Vector2 steer = ComputeSteer(forward, Time.time);
-        Vector2 dir = (forward + steer).normalized;
+        Vector2 steer = ComputeSteer(forward, t);
+        Vector2 dir = (forward + steer).sqrMagnitude > 1e-8f ? (forward + steer).normalized : forward;
 
-        // ---- 4) 実速度を算出 ----
-        float sp = baseSpeed * speedScale * dashMul;
+        float sp = baseSpeed * speedScale * speedJitter * dashMul * hopMul;
+        desiredVel = dir * sp;
 
-        // ---- 5) 速度ベクトル更新（グリッド移動） ----
-        velCell = dir * sp;
-
-        // ---- 6) 位置を進めて transform に反映 ----
-        posCell += velCell * dt;
-        ApplyTransform(posCell);
+        dirFallback = dir;
     }
 
+    // ---- 物理で確定移動（壁ヒット時は直前で停止→反射）----
     void FixedUpdate()
     {
-        // ★ B案：Update で確定した「方向×速度（= velCell）」をそのまま分離へ渡す
-        if (sep != null)
+        float dt = Time.fixedDeltaTime;
+        Vector2 move = desiredVel * dt;
+        float dist = move.magnitude;
+
+        if (dist > 0f)
         {
-            sep.SetDesiredVelocity(velCell);
+            Vector2 dir = move / dist;
+
+            int hitCount = rb.Cast(dir, boundaryFilter, castHits, dist + skin);
+            if (hitCount > 0)
+            {
+                float minDist = float.MaxValue;
+                RaycastHit2D nearest = castHits[0];
+                for (int i = 0; i < hitCount; i++)
+                    if (castHits[i].distance < minDist) { minDist = castHits[i].distance; nearest = castHits[i]; }
+
+                float safe = Mathf.Max(0f, nearest.distance - skin);
+                rb.MovePosition(rb.position + dir * safe);
+
+                Vector2 reflDir = Vector2.Reflect(dir, nearest.normal).normalized;
+                currentVel = reflDir * desiredVel.magnitude;
+                desiredVel = currentVel;
+
+                sep?.SetDesiredVelocity(currentVel);
+                return; // このFixedはここで終了（突破しない）
+            } else
+            {
+                rb.MovePosition(rb.position + move);
+            }
         }
 
-        // 注意：rb.velocity は書き換えない（移動はグリッド制御のため）
+        currentVel = desiredVel;
+        sep?.SetDesiredVelocity(currentVel);
     }
 
-    // ---- ステア（方向付け）：分離 + 微小ノイズ ----
+    // ===== GameFlow / EnemyManager 連携 =====
+    public void SetSpeedScale(float scale) => speedScale = Mathf.Clamp(scale, 0.1f, 5f);
+
+    public void ResetEnemy()
+    {
+        currentVel = Vector2.right * baseSpeed;
+        desiredVel = currentVel;
+        dashMul = 1f; hopMul = 1f;
+        InitDash(); InitHop();
+    }
+
+    public void ExternalNudge(Vector2 delta)
+    {
+        rb.MovePosition(rb.position + delta);
+    }
+
+    // ====== Variant: Dash ======
+    void InitDash()
+    {
+        dashMul = 1f;
+        dashEndT = 0f;
+        dashNextT = Time.time + Random.Range(dashIntervalRange.x, dashIntervalRange.y);
+    }
+    void UpdateDash()
+    {
+        if (variant != Variant.TypeB_Dash && variant != Variant.TypeD_DashHop) { dashMul = 1f; return; }
+        float t = Time.time;
+        if (t >= dashEndT) dashMul = 1f;
+        if (t >= dashNextT)
+        {
+            dashMul = dashMultiplier;
+            dashEndT = t + dashDuration;
+            dashNextT = t + Random.Range(dashIntervalRange.x, dashIntervalRange.y);
+        }
+    }
+
+    // ====== Variant: Hop ======
+    void InitHop()
+    {
+        hopMul = 1f;
+        hopState = HopState.Run;
+        hopStateEndT = Time.time + Random.Range(hopRunRange.x, hopRunRange.y);
+    }
+    void UpdateHop()
+    {
+        if (variant != Variant.TypeC_Hop && variant != Variant.TypeD_DashHop) { hopMul = 1f; return; }
+
+        float t = Time.time;
+        switch (hopState)
+        {
+            case HopState.Run:
+                hopMul = 1f;
+                if (t >= hopStateEndT) { hopState = HopState.Pause; hopStateEndT = t + hopPauseTime; }
+                break;
+            case HopState.Pause:
+                hopMul = 0f;
+                if (t >= hopStateEndT) { hopState = HopState.Burst; hopStateEndT = t + hopBurstTime; }
+                break;
+            case HopState.Burst:
+                hopMul = hopMultiplier;
+                if (t >= hopStateEndT) { hopState = HopState.Run; hopStateEndT = t + Random.Range(hopRunRange.x, hopRunRange.y); }
+                break;
+        }
+    }
+
+    // ===== ステア（分離＋ノイズ） =====
     Vector2 ComputeSteer(Vector2 forward, float t)
     {
-        Vector2 result = Vector2.zero;
+        Vector2 res = Vector2.zero;
 
-        // 分離（LastRepel）を方向へミックス
         if (sep != null && sep.LastRepel.sqrMagnitude > 1e-5f)
         {
-            result += sep.LastRepel.normalized * separationSteer;
+            Vector2 repel = sep.LastRepel * separationSteer; // 非正規化
+            if (repel.magnitude > steerMax) repel = repel.normalized * steerMax;
+            res += repel;
         }
 
-        // 微小ノイズ（反射角の揺らぎ）
         if (noiseClamp > 0f)
         {
-            float nx = (Mathf.PerlinNoise(t * 1.3f, 0.123f) - 0.5f) * 2f * noiseClamp;
-            float ny = (Mathf.PerlinNoise(0.456f, t * 1.7f) - 0.5f) * 2f * noiseClamp;
-            result += new Vector2(nx, ny);
+            float nx = (Mathf.PerlinNoise((t + noiseSeed * 0.1337f) * 1.3f, 0.123f + noiseSeed * 0.017f) - 0.5f) * 2f;
+            float ny = (Mathf.PerlinNoise(0.456f + noiseSeed * 0.031f, (t + noiseSeed * 0.257f) * 1.7f) - 0.5f) * 2f;
+            res += new Vector2(nx, ny) * noiseClamp;
         }
-
-        return result;
+        return res;
     }
 
-    // ---- 前方の壁で反射 ----
-    Vector2 ReflectIfHit(Vector2 forward)
-    {
-        if (reflectProbe <= 0f) return forward;
-
-        Vector2 p = (Vector2)transform.position;
-        RaycastHit2D hit = Physics2D.Raycast(p, forward, reflectProbe, wallMask);
-        if (hit.collider)
-        {
-            Vector2 r = Vector2.Reflect(forward, hit.normal).normalized;
-
-            // 反射ベクトルにも微小ノイズ
-            if (noiseClamp > 0f)
-            {
-                float e = (Mathf.PerlinNoise(Time.time * 1.9f, 0.89f) - 0.5f) * 2f * noiseClamp;
-                r = (r + new Vector2(e, -e)).normalized;
-            }
-            return r;
-        }
-        return forward;
-    }
-
-    // ---- 位置適用（グリッド→ワールド） ----
-    void ApplyTransform(Vector2 pos)
-    {
-        transform.position = new Vector3(pos.x, pos.y, transform.position.z);
-    }
+    static float Hash01(int s) => Mathf.Abs(Mathf.Sin(s * 12.3456789f)) % 1f;
 
 #if UNITY_EDITOR
     void OnDrawGizmosSelected()
     {
-        // 進行方向の可視化（velCell ベース）
-        Vector2 dir = (velCell.sqrMagnitude > 1e-6f) ? velCell.normalized : Vector2.right;
-
-        Gizmos.color = Color.cyan;  // 方向
-        Gizmos.DrawLine(transform.position, transform.position + (Vector3)dir * 0.6f);
-
-        Gizmos.color = Color.green; // 速度の目安
-        Gizmos.DrawLine(transform.position, transform.position + (Vector3)(dir * 0.4f));
-    }
-
-    public void ResetEnemy()
-    {
-        // ここで初期位置や状態に戻す処理を実装
-        // 例: transform.position = 初期位置;
-        // 必要に応じて他の状態もリセット
+        Gizmos.color = Color.cyan;
+        Vector2 d = currentVel.sqrMagnitude > 1e-6f ? currentVel.normalized : Vector2.right;
+        Gizmos.DrawLine(transform.position, transform.position + (Vector3)d * 0.6f);
     }
 #endif
 }

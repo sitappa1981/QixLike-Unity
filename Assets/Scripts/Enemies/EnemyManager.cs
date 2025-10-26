@@ -5,6 +5,15 @@ namespace QixLike
 {
     public sealed class EnemyManager : MonoBehaviour
     {
+        public void SetAllEnemiesSpeedScale(float scale)
+        {
+            foreach (var e in enemies) if (e) e.SetSpeedScale(scale);
+        }
+
+        public void ResetAllEnemies()
+        {
+            foreach (var e in enemies) if (e) e.ResetEnemy();
+        }
         public static EnemyManager Instance { get; private set; }
 
         readonly HashSet<SmallEnemy> enemies = new HashSet<SmallEnemy>();
