@@ -65,6 +65,11 @@ namespace QixLike
 
         SpriteRenderer sr; Color srBaseColor = Color.white; Vector3 baseScale = Vector3.one;
 
+        Rigidbody2D rb;
+        EnemySeparation2D sep;
+        Vector2 dir = Vector2.right;   // 既存のロジックで決める進行方向
+        public float moveSpeed = 2.2f; // 既存の速度
+
         public void AssignSceneRefs()
         {
             if (gridRoot == null) gridRoot = SceneLocator.Grid;
@@ -74,7 +79,10 @@ namespace QixLike
             if (player == null) player = SceneLocator.Player;
         }
 
-        void Awake() { AssignSceneRefs(); }
+        void Awake() { AssignSceneRefs();
+            rb = GetComponent<Rigidbody2D>();
+            sep = GetComponent<EnemySeparation2D>();
+        }
 
         void Start()
         {
@@ -359,6 +367,16 @@ namespace QixLike
             float a = Mathf.Min(hopCooldownRange.x, hopCooldownRange.y);
             float b = Mathf.Max(hopCooldownRange.x, hopCooldownRange.y);
             nextHopCooldown = Random.Range(a, b);
+        }
+        void FixedUpdate()
+        {
+            // ここで今まで通り、反射や巡回で dir を決める
+            // 例：rb.position と Raycast でリフレクト etc...
+
+            // ★最後に1行：分離へ希望速度を渡す
+            sep.SetDesiredVelocity(dir * moveSpeed);
+
+            // 注意：この後で rb.velocity を上書きしないこと（分離が仕上げます）
         }
     }
 }
