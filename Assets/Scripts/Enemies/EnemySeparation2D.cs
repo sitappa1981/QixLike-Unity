@@ -22,6 +22,9 @@ public class EnemySeparation2D : MonoBehaviour
     readonly Collider2D[] hits = new Collider2D[32];
     Vector2 desiredVel;                                     // AI����n������]���x
 
+    // フィールド追加
+    public Vector2 LastRepel { get; private set; }
+
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
@@ -40,6 +43,9 @@ public class EnemySeparation2D : MonoBehaviour
         // �ߖT�̓G����̔���
         Vector2 repel = ComputeRepulsion();
 
+        // FixedUpdate 内で repel を求めた直後に代入
+        LastRepel = repel;
+
         // �O���t�߂ŊO�������x��}����
         if (TryGetBoundaryNormal(out Vector2 outwardNormal))
         {
@@ -49,6 +55,8 @@ public class EnemySeparation2D : MonoBehaviour
 
         // ���x�X�V�i�Ȃ߂炩�Ɂj
         Vector2 vTarget = vDesired + repel * Time.fixedDeltaTime;
+
+        // もし rb.velocity（linearVelocity）を使わない運用ならこの行は無効化可
         rb.linearVelocity = Vector2.Lerp(vTarget, rb.linearVelocity, damping);
 
         // ���t���[���p�Ƀ��Z�b�g�i��FixedUpdate��AI����n���Ă��炤�j

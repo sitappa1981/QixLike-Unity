@@ -113,6 +113,14 @@ namespace QixLike
             if (act != ActState.Dash && act != ActState.Hop)
             {
                 Vector2 steer = ComputeSteer(dir, Time.time);
+                // 追加: 分離ベクトルをステアにミックス（重みはお好みで）
+                if (sep != null && sep.LastRepel.sqrMagnitude > 1e-5f)
+                {
+                    // 速度次第で強すぎる時は * 係数 を下げる
+                    Vector2 sepSteer = sep.LastRepel.normalized * 0.6f;
+                    steer += sepSteer;
+                }
+
                 if (act == ActState.TelegraphDash && telegraphJitterBoost > 0f)
                     steer += ComputeJitter(Time.time) * telegraphJitterBoost;
 

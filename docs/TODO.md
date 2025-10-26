@@ -1,167 +1,47 @@
-# TODO — QixLike Unity
+# TODO — QixLike-Unity (Unity 6.2)
 
-> 書式: `- [ ]` 未着手 / `- [-]` 仕掛り / `- [x]` 完了  
-> 目安の優先度: 🟥最優先 / 🟧高 / 🟨中 / 🟩低
+## 0. 完了済み / Done
+- [x] Boundary（外周）を Boundary レイヤの Collider2D で構成（TilemapCollider2D + Composite / もしくは Box4枚）
+- [x] Physics 2D レイヤマトリクス：Enemy × Enemy を OFF
+- [x] 小型敵 SmallEnemy の基本挙動（反射・テレグラフDash/Hop など）
+- [x] 分離用コンポーネント EnemySeparation2D の導入
+- [x] GitHub リポジトリ公開および反映
 
----
+## 1. 進行中 / In Progress
+- [ ] SmallEnemy と分離の**整合**（グリッド移動との併用）
+  - [ ] `EnemySeparation2D.LastRepel` を公開して **SmallEnemy.Update でステアにミックス**
+  - [ ] rb.velocity による移動は使わず、グリッド移動のままにする（※現行方針）
+  - [ ] 多体（5体/20体）での密集テスト：重なり/ブルブル/外周での抜けを確認
+  - [ ] 調整ガイド  
+        - separationForce 10→12〜14（押し返し）  
+        - separationRadius 1.2→1.4（近づき具合）  
+        - damping 0.25→0.30〜0.45（振動抑制）  
+        - boundaryLock 0.70→0.80〜0.90（外周抑制）  
+        - boundaryProbe 0.30→0.35〜0.45（外周検出）
 
-## 0. 現在の実装スナップショット（DONE）
+## 2. 次の実装 / Next Up（M2: ゲーム化）
+- [ ] ステージ定義（ScriptableObject）
+  - [ ] `StageConfig`：制限時間 / 目標Fill% / 敵構成（Preset + Count + Spawn）
+  - [ ] `EnemyPreset`：速度・ダッシュ/ホップ可否・分離パラメータ
+- [ ] GameFlow（状態管理）
+  - [ ] Countdown → Playing → Clear / GameOver
+  - [ ] `CaptureSystem` と連携して Fill% 達成判定
+- [ ] HUD/演出
+  - [ ] Fill%/残機/タイマー表示
+  - [ ] 結果パネル（Clear / GameOver / Next / Retry）
+- [ ] 敵バリエーション
+  - [ ] TypeB: Dash、TypeC: Hop、TypeD: 複合
+  - [ ] 速度・難度スケールとプリセット調整
 
-- [x] 基本グリッド & タイルマップ（外周・塗りつぶし・トレイル）
-- [x] プレイヤー 1セル刻み移動（外周自由／内側で描画開始）
-- [x] トレイル描画／外周復帰で囲い込み → 埋める（`CaptureSystem`）
-- [x] トレイル点滅（色・周波数可変）  
-- [x] 自機アニメ（ハート 5枚 PingPongUltra、超高速対応）
-- [x] 描画中は移動速度スケール（1.0〜0.5 可変）
-- [x] ダメージ演出（ハート分裂→落下・残機-1・リスポーン）
-- [x] HUD 左上（Fill% / 残機アイコン列）
-- [x] 画面下中央ビッグタイマー（PocketCalculator フォント／Amberマテリアル）
-- [x] P=ポーズ / R=リセット
-- [x] 敵 TypeA（外周沿い＋内側パトロール／壁までしっかり到達）
-- [x] 敵 TypeB（短距離ダッシュ／テレグラフ表示）
-- [x] 敵 TypeC（2セルスキップの擬似ホップ）
-- [x] 敵 TypeD（B＋C の複合）
-- [x] 敵はトレイル接触でミス判定（外周接触は反射）
-- [-] 敵どうし非貫通：分離/回避ロジック 1版（要チューニング）
-- [x] Prefab: `EnemySmall_TypeA/B/C/D`
-- [x] `SceneLocator`（参照ハブ）
-- [x] `AI_CONTEXT.md`（現在地の説明）
+## 3. バグ/技術的負債 / Tech Debt
+- [ ] 分離コスト最適化（OverlapCircleNonAlloc の半径/頻度の見直し）
+- [ ] 角でのハマり対策とステア重みの上限
+- [ ] 物理とグリッドの混在リスクの明文化（rb.velocity を使う系は封印）
 
----
-
-## 1. 最優先 🟥（短期で完成度が上がるもの）
-
-### 1-1 敵どうし非貫通の仕上げ（Separation/回避）
-- [-] 追突時の**押し返しベクトル**の強度/減衰を調整（大集団でも震えない）
-- [-] デバッグGizmo（敵ごとの回避半径 / 速度ベクトル）
-- [ ] **斜面ロック**防止：外周に沿って移動中の敵は接触解消を優先しても「外周から離れすぎない」制約
-- 受け入れ基準
-  - [ ] 10体でも重なり/ワープ/ブルブルが起きない
-  - [ ] 外周をなめらかに周回可、狭路でも詰まらない
-
-### 1-2 ステージ定義（ScriptableObject）
-- [ ] `StageConfig` SO 作成
-  - [ ] 制限時間 / 初期残機 / 目標 Fill%  
-  - [ ] 敵スポーン設定（種類・数・初期位置・パラメータ override）
-- [ ] `GameFlow` が `StageConfig` を読み取り初期化
-- [ ] ステージ毎の難易度カーブ（ダッシュ頻度/ホップ間隔などの係数）
-- 受け入れ基準
-  - [ ] Sceneを変えずに `StageConfig` 差し替えだけで内容が切り替わる
-  - [ ] 3つのサンプル `StageConfig` を提供（Easy/Normal/Hard）
-
-### 1-3 クリア/ゲームオーバー演出と遷移
-- [ ] **クリア**：Fill%>=目標 → スローフェード/SE → 結果パネル
-- [ ] **ゲームオーバー**：残機0 or 時間切れ → 結果パネル
-- [ ] 結果UI：Fill達成率 / クリアタイム / リトライ / 次ステージ
-- [ ] `GameFlow` のステート図と状態遷移の簡易ログ
-- 受け入れ基準
-  - [ ] すべてのルートでUIが重複表示なく正しく遷移する
-
----
-
-## 2. 高優先 🟧
-
-### 2-1 敵AIの安定化 & 調整項目の見える化
-- [ ] `SmallEnemy` の Inspector を**整頓**（ヘッダー/Tooltip/範囲制限）
-- [ ] **パラメータプリセット**（A/B/C/D を ScriptableObject 化）
-- [ ] テレグラフ中の**接触判定軽減**（当たりの緩和/無敵窓）
-- [ ] 反射判定の角度安定（微小ノイズのクランプ）
-
-### 2-2 トレイル/VFXの強化
-- [ ] 囲い込み成功の**波紋/チリ**VFX
-- [ ] 敵がトレイルを**横切る直前のフラッシュ**（緊張感UP）
-- [ ] 外周タイルの**ハイライト**（視認性向上）
-
-### 2-3 入力/操作感
-- [ ] 連続入力時の**バッファ**（1〜2フレーム）で角折れ改善
-- [ ] オプション：**移動音ON/OFF**、アニメ速度、描画中速度スケール
-
----
-
-## 3. 中優先 🟨
-
-### 3-1 オーディオ
-- [ ] SFXリスト：描画開始/囲い込み成功/被弾/ポーズ/カウントダウン/敵ダッシュ
-- [ ] BGM ループ & **ラスト30秒**でテンポアップ（ピッチ or 切り替え）
-- [ ] Mixer セットアップ（SFX/BGM/マスター） & Ducking
-
-### 3-2 スコア/リザルト
-- [ ] 囲い込みで**面積ボーナス**（小面積チェーンで倍率UP）
-- [ ] リザルト画面：Grade, BestFill, BestTime 保存（PlayerPrefs）
-
-### 3-3 パフォーマンス/GC
-- [ ] 敵フラグメント/SE/テレグラフの**プーリング**
-- [ ] `FixedUpdate` からの**過剰割り込み抑制**（物理フレーム数管理）
-- [ ] 低スペック動作確認（フレームタイム・GCAlloc チェック）
-
----
-
-## 4. 低優先 🟩
-
-### 4-1 エディタツール
-- [ ] デバッグオーバーレイ（FPS/敵数/Fill%/次の囲い込み面積）
-- [ ] 敵経路の**リプレイ**（最後の5秒をGizmoラインで）
-
-### 4-2 品質/アクセシビリティ
-- [ ] 画面振動・フラッシュの**低刺激モード**
-- [ ] 色覚多様性に配慮した配色テーマ（Trail/Fill）
-
-### 4-3 将来拡張メモ
-- [ ] 敵TypeE（レーザー照射／トレイル断絶）
-- [ ] 2P協力 or 対戦モード（同一グリッドで同時描画）
-
----
-
-## 5. バグ/技術的負債（見つけ次第追加）
-
-- [ ] 稀に狭路ですれ違い時の押し戻しで**外周から離れる**ことがある
-- [ ] タイル境界の**極小面積**囲い込みでフラグが立たないケースの調査
-- [ ] タイマー材質（Amber）で**HDR Bloom**を使う将来案（今は未使用）
-
----
-
-## 6. ドキュメント/運用
-
-- [x] `AI_CONTEXT.md` 更新（本TODOと整合）
-- [ ] `README.md` 追加（操作／ビルド手順／依存ライブラリ）
-- [ ] `CHANGELOG.md` 追加（Semanticな粒度で記録）
-- [ ] Git LFS 追跡拡張：`*.wav`, `*.mp3`, `*.png`, `*.ttf` など再確認
-
----
-
-## 7. マイルストーン
-
-### M1「Core 完成」 ✅
-- プレイサイクル（描画→囲い込み→Fill%更新）/ 敵A〜D / HUD / タイマー
-
-### M2「ゲーム化」 🟥（今ここ）
-- ステージ定義SO / クリア・失敗演出 / 敵非貫通の仕上げ / バランス初版
-
-### M3「演出&音」 🟧
-- VFX / SFX / BGM / UI磨き込み / スコア & リザルト
-
-### M4「整備」 🟨
-- パフォーマンス / デバッグ機能 / ドキュメント / 最終調整
-
----
-
-## 8. 直近の着手順（今日やるリスト）
-
-1) 🟥 敵非貫通：分離強度と壁沿い制約の調整、Gizmo追加  
-2) 🟥 `StageConfig` SO & `GameFlow` 読み込み（Easy/Normal/Hard 3つ）  
-3) 🟥 クリア/ゲームオーバーの結果UI & 遷移  
-4) 🟧 敵パラメータのInspector整理とプリセット化  
-
----
-
-## 付録：ファイル/コンポーネント指針
-
-- **ScriptableObjects**
-  - `StageConfig`: timeLimit, startLives, goalFill, enemyEntries[]
-  - `EnemyPreset`: 移動/反射/分離/テレグラフ/ダッシュ/ホップ各種係数
-- **シーン構成（Game）**
-  - `GameRoot` (GridBootstrap, CaptureSystem, TrailBlinker, GameFlow)
-  - `Player` (PlayerController, SpritePingPongUltra)
-  - `EnemySystem` (SceneLocator, ※今後 EnemyManager をここに)
-  - `CanvasHUD` (HUDGroup: FillText, LivesIcons / TimerGroup: TimerBigText)
-
+## 4. リリース準備 / Milestone
+- [ ] v0.2.0（M2 完了）
+  - [ ] 受け入れ基準：  
+        - 20体でも重なり・ワープ・ブルブルなし  
+        - Fill%/時間/残機のゲームループ成立  
+        - 3段階ステージが `StageConfig` だけで切替可能
+- [ ] ドキュメント更新（AI_CONTEXT / README / CONTRIBUTING）
